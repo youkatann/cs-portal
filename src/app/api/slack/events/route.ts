@@ -73,11 +73,9 @@ export async function POST(req: Request) {
     })
 
     return NextResponse.json({ ok: true })
-  } catch (e: any) {
-    console.error('[chat/new] unexpected error', e)
-    return NextResponse.json(
-      { error: e.message ?? 'Unknown error' },
-      { status: 500 },
-    )
-  }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unknown error'
+      console.error('[chat/new] unexpected error', e)
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
 }
