@@ -1,11 +1,12 @@
+// src/app/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Chat } from '@/components/Chat';
+import { DocumentsTab } from '@/components/Documents';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { DocumentsTab } from '@/components/Documents';
 import {
   Card,
   CardContent,
@@ -13,32 +14,106 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { format } from 'date-fns';
+import { Truck } from 'lucide-react';
 
-// Оновлений тип відповідно до ваших колонок
 type RawJob = {
   job_id: number;
   customer_name: string;
   email: string;
   phone1_number: string;
   phone2_number: string | null;
+  current_location: string | null;
   order_status: string;
   pickup_date: string;
   actual_volume: number;
   pickup_address1: string;
   pickup_city: string;
   pickup_state: string;
-  pickup_flights?: number;
-  pickup_entrance?: string;
   pickup_zip: string;
+  pickup_flights: string;
+  pickup_apartment: string;
+  pickup_entrance: string;
   delivery_address1: string;
   delivery_city: string;
   delivery_state: string;
-  delivery_flights?: number;
-  delivery_entrance?: string;
   delivery_zip: string;
-  delivery_apartment: string | null;
+  delivery_flights: string;
+  delivery_apartment: string;
+  delivery_entrance: string;
+  delivery_date_from: string;
+  delivery_date_to: string;
+};
+
+function sanitizeEmail(raw: string): string {
+  return (
+    raw
+      .split(',')
+      .map((e) => e.trim())
+      .filter((e) => !e.startsWith('qt@'))
+      [0] || ''
+  );
+}
+
+function formatPhone(digits: string): string {
+  return digits.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+}
+
+interface StatusProgressProps {
+  status: string;
+}
+
+const segments = [
+  ['Booked', 'Delay'],
+  ['Picked Up'],
+  ['On Trip'],
+  ['Delivered'],
+];
+
+function getStage(status: string) {
+  const idx = segments.findIndex((group) => group.includes(status));
+  return idx >= 0 ? idx : 0;
+}
+
+const StatusProgress: React.FC<StatusProgressProps> = ({ status }) => {
+  const stage = getStage(status);
+
+  return (
+    <>
+      {/* Desktop */}
+      <div className="hidden md:block relative my-4">
+        <div className="flex h-1 rounded overflow-hidden">
+          {segments.map((_, i) => (
+            <div
+              key={i}
+              className={`flex-1 ${i <= stage ? 'bg-blue-600' : 'bg-gray-200'}`}
+            />
+          ))}
+        </div>
+        <div className="absolute inset-0 flex">
+          {segments.map((_, i) => (
+            <div key={i} className="flex-1 relative">
+              {i === stage && (
+                <div className="absolute -top-8 left-1/2 flex w-max -translate-x-1/2 flex-col items-center">
+                  <Truck className="text-blue-600" size={24} />
+                  <span className="mt-2 text-sm font-medium">{status}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Mobile */}
+      <div className="md:hidden flex flex-col w-full my-4">
+        <div className="w-full h-1 rounded bg-blue-600" />
+        <div className="mt-2 flex flex-col items-center">
+          <Truck className="text-blue-600" size={20} />
+          <span className="mt-1 text-sm font-medium">{status}</span>
+        </div>
+      </div>
+    </>
+  );
 };
 
 export default function HomePage() {
@@ -49,52 +124,89 @@ export default function HomePage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setOrder(null);
-    setLoading(true);
+  // login logic extracted so it can be re-used
+  const doLogin = useCallback(
+    async (idNum: number, rawEmail: string) => {
+      setLoading(true);
+      setError('');
+      setOrder(null);
+      const { data: allJobs, error: fetchErr } = await supabase
+        .from('Jobs')
+        .select('*');
+      setLoading(false);
+      if (fetchErr) {
+        setError('Server error. Please try again later.');
+        return;
+      }
+      const found = allJobs?.find((j) => j.job_id === idNum);
+      if (!found) {
+        setError('No order found with that Order ID.');
+        return;
+      }
+      const primaryEmail = sanitizeEmail(found.email);
+      if (primaryEmail !== sanitizeEmail(rawEmail)) {
+        setError('Incorrect password (email).');
+        return;
+      }
+      setOrder(found);
+      const newSession = `${found.job_id}-${Date.now()}`;
+      setSessionId(newSession);
+      localStorage.setItem('portalOrder', JSON.stringify(found));
+      localStorage.setItem('portalSession', newSession);
+    },
+    []
+  );
 
+  // rehydrate from localStorage
+  useEffect(() => {
+    const savedOrder = localStorage.getItem('portalOrder');
+    const savedSession = localStorage.getItem('portalSession');
+    if (savedOrder && savedSession) {
+      setOrder(JSON.parse(savedOrder));
+      setSessionId(savedSession);
+    }
+  }, []);
+
+  // auto-login via URL params ?job=123&email=foo@bar.com
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const jobParam = params.get('job');
+    const emailParam = params.get('email');
+    if (jobParam && emailParam && !order) {
+      const idNum = parseInt(jobParam, 10);
+      if (!isNaN(idNum)) {
+        setOrderId(jobParam);
+        setPassword(sanitizeEmail(emailParam));
+        doLogin(idNum, emailParam);
+      }
+    }
+  }, [doLogin, order]);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
     const idNum = parseInt(orderId, 10);
     if (isNaN(idNum)) {
       setError('Order ID must be a valid number.');
-      setLoading(false);
       return;
     }
+    doLogin(idNum, password);
+  };
 
-    // Тепер шукаємо по job_id
-    const { data: allJobs, error: fetchErr } = await supabase
-      .from('Jobs')
-      .select('*');
-    setLoading(false);
-    if (fetchErr) {
-      setError('Server error. Please try again later.');
-      return;
-    }
-
-    const found = allJobs?.find(j => j.job_id === idNum);
-    if (!found) {
-      setError('No order found with that Order ID.');
-      return;
-    }
-
-    // Тепер паролем є email
-    if (found.email !== password) {
-      setError('Incorrect password (email).');
-      return;
-    }
-
-    // Успіх!
-    setOrder(found);
-    setSessionId(`${found.job_id}-${Date.now()}`);
+  const handleLogout = () => {
+    setOrder(null);
+    setOrderId('');
+    setPassword('');
+    setSessionId('');
+    localStorage.removeItem('portalOrder');
+    localStorage.removeItem('portalSession');
   };
 
   if (!order) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+      <div className="min-h-screen flex items-center justify-center p-6 md:p-12">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Track by OrderID</CardTitle>
+            <CardTitle>Track by Order ID</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -106,7 +218,7 @@ export default function HomePage() {
                   id="orderId"
                   type="number"
                   value={orderId}
-                  onChange={e => setOrderId(e.target.value)}
+                  onChange={(e) => setOrderId(e.target.value)}
                   placeholder="e.g. 15720"
                   required
                 />
@@ -119,7 +231,7 @@ export default function HomePage() {
                   id="password"
                   type="text"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="e.g. you@example.com"
                   required
                 />
@@ -136,157 +248,137 @@ export default function HomePage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-semibold">Order #{order.job_id}</h2>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setOrder(null);
-            setOrderId('');
-            setPassword('');
-            setSessionId('');
-          }}
-        >
+    <div className="min-h-screen flex flex-col p-6 md:p-12">
+      <header className="flex flex-col md:flex-row items-center justify-between mb-6">
+        <div className="text-center md:text-left">
+          <h2 className="text-lg tracking-tight uppercase opacity-50">
+            Order
+          </h2>
+          <span className="block text-4xl md:text-7xl text-primary font-bold">
+            #{order.job_id}
+          </span>
+        </div>
+        <Button variant="outline" onClick={handleLogout} className="mt-4 md:mt-0">
           Exit
         </Button>
-      </div>
+      </header>
 
-      <Tabs defaultValue="info">
-        <TabsList>
-          <TabsTrigger value="info">Order Info</TabsTrigger>
-          <TabsTrigger value="chat">Chat</TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="info">
-          {/* Customer & Contact */}
-          <Card className="mb-4">
-            <CardHeader>
-              <CardTitle>Customer & Contact Information</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="font-medium">Customer Name</p>
-                <p>{order.customer_name}</p>
-              </div>
-              <div>
-                <p className="font-medium">Email</p>
-                <p>{order.email}</p>
-              </div>
-              <div>
-                <p className="font-medium">Phone 1</p>
-                <p>{order.phone1_number}</p>
-              </div>
-              <div>
-                <p className="font-medium">Phone 2</p>
-                <p>{order.phone2_number ?? <em>Not specified</em>}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Separator />
-
-          {/* Order Info */}
-          <Card className="mb-4">
-            <CardHeader>
-              <CardTitle>Order Information</CardTitle>
-            </CardHeader>
-            <CardContent className="flex space-x-4">
-              <Badge variant="outline">Status: {order.order_status}</Badge>
-              <Badge variant="outline">
-                Move Date: {new Date(order.pickup_date).toLocaleDateString()}
-              </Badge>
-              <Badge variant="outline">Volume: {order.actual_volume}</Badge>
-            </CardContent>
-          </Card>
-
-          <Separator />
-
-          {/* Pickup & Delivery */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <Tabs defaultValue="info" className="flex-1 flex flex-col">
+        <div className="mb-4 overflow-x-auto">
+          <TabsList className="space-x-2">
+            <TabsTrigger value="info">Order Info</TabsTrigger>
+            <TabsTrigger value="documents">Documents</TabsTrigger>
+            <TabsTrigger value="chat">Support Chat</TabsTrigger>
+          </TabsList>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <TabsContent value="info" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Pickup Information</CardTitle>
+                <CardTitle className="uppercase text-xl md:text-3xl">
+                  Customer & Contact
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                <p>
-                  <span className="font-medium">Address:</span> {order.pickup_address1}
-                </p>
-                <p>
-                  <span className="font-medium">City:</span> {order.pickup_city}
-                </p>
-                <p>
-                  <span className="font-medium">State:</span> {order.pickup_state}
-                </p>
-                <p>
-                  <span className="font-medium">ZIP:</span> {order.pickup_zip}
-                </p>
-                {/* Якщо додаткові поля flight/entrance є */}
-                {order.pickup_flights != null && (
-                  <p>
-                    <span className="font-medium">Flights:</span> {order.pickup_flights}
-                  </p>
-                )}
-                {order.pickup_entrance && (
-                  <p>
-                    <span className="font-medium">Entrance:</span> {order.pickup_entrance}
-                  </p>
-                )}
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="font-bold">Name</p>
+                  <p>{order.customer_name}</p>
+                </div>
+                <div>
+                  <p className="font-bold">Email</p>
+                  <p>{sanitizeEmail(order.email)}</p>
+                </div>
+                <div>
+                  <p className="font-bold">Contact Phones</p>
+                  <div className="space-y-1">
+                    <p>{formatPhone(order.phone1_number)}</p>
+                    {order.phone2_number && (
+                      <p>{formatPhone(order.phone2_number)}</p>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Delivery Information</CardTitle>
+                <CardTitle className="uppercase text-xl md:text-3xl">
+                  Order Info
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                <p>
-                  <span className="font-medium">Address:</span> {order.delivery_address1}
-                </p>
-                <p>
-                  <span className="font-medium">City:</span> {order.delivery_city}
-                </p>
-                <p>
-                  <span className="font-medium">State:</span> {order.delivery_state}
-                </p>
-                <p>
-                  <span className="font-medium">ZIP:</span> {order.delivery_zip}
-                </p>
-                <p>
-                  <span className="font-medium">Apartment:</span>{' '}
-                  {order.delivery_apartment ?? <em>Not specified</em>}
-                </p>
-                {order.delivery_flights != null && (
-                  <p>
-                    <span className="font-medium">Flights:</span> {order.delivery_flights}
-                  </p>
-                )}
-                {order.delivery_entrance && (
-                  <p>
-                    <span className="font-medium">Entrance:</span> {order.delivery_entrance}
-                  </p>
-                )}
+              <CardContent className="space-y-4">
+                <StatusProgress status={order.order_status} />
+                <Badge variant="outline">Volume: {order.actual_volume}</Badge>
               </CardContent>
             </Card>
-          </div>
-        </TabsContent>
 
-        <TabsContent value="chat">
-    <Chat
-    sessionId={sessionId}
-    userId={order.customer_name}           // або ваш реальний user_id
-    job={{
-      job_id: order.job_id,
-      customer_name: order.customer_name,
-      email: order.email,
-      phone1_number: order.phone1_number,
-    }}
-  />
-        </TabsContent>
-        <TabsContent value="documents">
-  <DocumentsTab jobId={order.job_id} />
-</TabsContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="uppercase text-xl md:text-3xl">
+                    Pickup Info
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p>
+                    <span className="font-bold">Pickup Date:</span>{' '}
+                    {format(new Date(order.pickup_date), 'MM/dd/yyyy')}
+                  </p>
+                  <p className="text-sm md:text-base">
+                    <span className="font-bold">Address:</span>{' '}
+                    {`${order.pickup_address1}, ${order.pickup_city.toUpperCase()}, ${order.pickup_state}, ${order.pickup_zip}${order.pickup_flights ? `, fl:${order.pickup_flights}` : ''}${order.pickup_entrance ? `, ent:${order.pickup_entrance}` : ''}`}
+                  </p>
+                  {order.current_location && (
+                    <p>
+                      <span className="font-bold">Current Location:</span>{' '}
+                      {order.current_location}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="uppercase text-xl md:text-3xl">
+                    Delivery Info
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {order.delivery_date_to && (
+                    <p>
+                      <span className="font-bold">Estimated Delivery:</span>{' '}
+                      {`${format(new Date(order.delivery_date_from), 'MM/dd/yyyy')} – ${format(
+                        new Date(order.delivery_date_to),
+                        'MM/dd/yyyy'
+                      )}`}
+                    </p>
+                  )}
+                  <p className="text-sm md:text-base">
+                    <span className="font-bold">Address:</span>{' '}
+                    {`${order.delivery_address1}, ${order.delivery_city.toUpperCase()}, ${order.delivery_state}, ${order.delivery_zip}${order.delivery_flights ? `, fl:${order.delivery_flights}` : ''}${order.delivery_entrance ? `, ent:${order.delivery_entrance}` : ''}`}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="chat" className="h-full">
+            <Chat
+              sessionId={sessionId}
+              userId={order.customer_name}
+              job={{
+                job_id: order.job_id,
+                customer_name: order.customer_name,
+                email: order.email,
+                phone1_number: order.phone1_number,
+              }}
+            />
+          </TabsContent>
+
+          <TabsContent value="documents">
+            <DocumentsTab jobId={order.job_id} />
+          </TabsContent>
+        </div>
       </Tabs>
     </div>
   );

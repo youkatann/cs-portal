@@ -75,7 +75,6 @@ export function DocumentsTab({ jobId }: { jobId: number }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Name</TableHead>
           <TableHead>Type</TableHead>
           <TableHead>Action</TableHead>
         </TableRow>
@@ -83,7 +82,6 @@ export function DocumentsTab({ jobId }: { jobId: number }) {
       <TableBody>
         {docs.map((d) => (
           <TableRow key={d.file_path}>
-            <TableCell>{d.document_name}</TableCell>
             <TableCell>{d.document_type}</TableCell>
             <TableCell>
               {d.url ? (

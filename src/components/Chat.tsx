@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { Button } from '@/components/ui/button'
 export type RawJobHeader = {
   job_id: number
   customer_name: string
@@ -138,9 +139,8 @@ export const Chat: React.FC<ChatProps> = ({ sessionId, userId, job }) => {
           </div>
         ))}
       </div>
-      <div className="p-4 border-t flex space-x-2">
-        <input
-          type="text"
+      <div className="p-4 border-t flex flex-col md:flex-row gap-4 md:gap-0 space-x-2">
+        <textarea
           className="flex-1 border rounded px-2 py-1"
           placeholder="Type your message…"
           value={newText}
@@ -152,12 +152,12 @@ export const Chat: React.FC<ChatProps> = ({ sessionId, userId, job }) => {
             }
           }}
         />
-        <button
-          className="bg-blue-600 text-white px-4 rounded"
+        <Button
+          className="bg-primary text-white px-4 rounded"
           onClick={sendMessage}
         >
           Send
-        </button>
+        </Button>
       </div>
     </div>
   )
