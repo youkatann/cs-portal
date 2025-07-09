@@ -87,7 +87,7 @@ const StatusProgress: React.FC<StatusProgressProps> = ({ status }) => {
           {segments.map((_, i) => (
             <div
               key={i}
-              className={`flex-1 ${i <= stage ? 'bg-blue-600' : 'bg-gray-200'}`}
+              className={`flex-1 ${i <= stage ? 'bg-primary' : 'bg-gray-200'}`}
             />
           ))}
         </div>
@@ -96,7 +96,7 @@ const StatusProgress: React.FC<StatusProgressProps> = ({ status }) => {
             <div key={i} className="flex-1 relative">
               {i === stage && (
                 <div className="absolute -top-8 left-1/2 flex w-max -translate-x-1/2 flex-col items-center">
-                  <Truck className="text-blue-600" size={24} />
+                  <Truck className="text-primary" size={24} />
                   <span className="mt-2 text-sm font-medium">{status}</span>
                 </div>
               )}
@@ -106,9 +106,9 @@ const StatusProgress: React.FC<StatusProgressProps> = ({ status }) => {
       </div>
       {/* Mobile */}
       <div className="md:hidden flex flex-col w-full my-4">
-        <div className="w-full h-1 rounded bg-blue-600" />
+        <div className="w-full h-1 rounded bg-primary" />
         <div className="mt-2 flex flex-col items-center">
-          <Truck className="text-blue-600" size={20} />
+          <Truck className="text-primary" size={20} />
           <span className="mt-1 text-sm font-medium">{status}</span>
         </div>
       </div>
