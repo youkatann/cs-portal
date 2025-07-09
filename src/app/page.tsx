@@ -97,7 +97,7 @@ const StatusProgress: React.FC<StatusProgressProps> = ({ status }) => {
               {i === stage && (
                 <div className="absolute -top-8 left-1/2 flex w-max -translate-x-1/2 flex-col items-center">
                   <Truck className="text-primary" size={24} />
-                  <span className="mt-2 text-sm font-medium">{status}</span>
+                  <span className="mt-4 text-sm font-medium">{status}</span>
                 </div>
               )}
             </div>
