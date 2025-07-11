@@ -27,11 +27,21 @@ export async function POST(req: NextRequest) {
   let thread = existingThreads?.[0];
   const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
+  function sanitizeEmail(raw: string): string {
+  return (
+    raw
+      .split(',')
+      .map((e) => e.trim())
+      .filter((e) => !e.startsWith('qt@'))
+      [0] || ''
+  );
+  }
+  
   // 2. Якщо немає – створюємо тред + шапку
   if (!thread) {
     // статус за замовчуванням
     const status = 'unresolved';
-
+    const primaryEmail = sanitizeEmail(job.email);
     // будуємо блоки для шапки
     const headerBlocks: KnownBlock[] = [
       {
@@ -46,7 +56,7 @@ export async function POST(req: NextRequest) {
         fields: [
           { type: 'mrkdwn', text: `*Status:*\n${status}` },
           { type: 'mrkdwn', text: `*Customer:*\n${job.customer_name}` },
-          { type: 'mrkdwn', text: `*Email:*\n${job.email}` },
+          { type: 'mrkdwn', text: `*Email:*\n${primaryEmail}` },
           { type: 'mrkdwn', text: `*Phone:*\n${job.phone1_number}` }
         ]
       },
