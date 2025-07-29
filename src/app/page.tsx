@@ -130,15 +130,17 @@ export default function HomePage() {
       setLoading(true);
       setError('');
       setOrder(null);
-      const { data: allJobs, error: fetchErr } = await supabase
-        .from('Jobs')
-        .select('*');
+    const { data: foundJobs, error: fetchErr } = await supabase
+      .from('Jobs')
+      .select('*')
+      .eq('job_id', idNum)
+      .limit(1);
       setLoading(false);
       if (fetchErr) {
         setError('Server error. Please try again later.');
         return;
       }
-      const found = allJobs?.find((j) => j.job_id === idNum);
+     const found = foundJobs?.[0];
       if (!found) {
         setError('No order found with that Order ID.');
         return;
